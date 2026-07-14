@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+*.egg
+
+# Test / tooling artifacts
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothetical_cache/
+
+# Editor / OS
+.idea/
+.vscode/
+.DS_Store
+*.swp
+
+# Local agy / hermes output (never commit these)
+agyx_out/
+agyx_check/
+__pycache__/
+
+# Secrets (defensive — repo must never contain any)
+.env
+*.pem
+oauth_creds.json
