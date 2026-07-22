@@ -249,10 +249,17 @@ def do_image_generation(prompt: str, img_model: str, out_dir: str) -> Tuple[Opti
 
 
 def which_agy() -> Optional[str]:
-    """Return the path to the agy binary if present, else None."""
+    """Return the path to the REAL agy binary if present, else None.
+    
+    Prefers agy.real (bypasses the proxy wrapper) so tools work.
+    """
     import shutil
-    p = shutil.which("agy")
-    return p
+    # Try agy.real first (direct binary, no proxy wrapper)
+    for name in ("agy.real", "agy"):
+        p = shutil.which(name)
+        if p:
+            return p
+    return None
 
 
 def generate_image_via_agy(prompt: str, out_dir: str,
@@ -289,7 +296,7 @@ def generate_image_via_agy(prompt: str, out_dir: str,
         env.pop(pv, None)
     try:
         proc = subprocess.run(
-            [agy, "-p", instruction],
+            [agy, "--dangerously-skip-permissions", "-p", instruction],
             env=env, capture_output=True, text=True, timeout=timeout,
         )
     except subprocess.TimeoutExpired:
@@ -351,6 +358,11 @@ def run_via_agy(
     exec: Optional[str] = None,
     timeout: int = 300,
     watch_dirs: Optional[List[str]] = None,
+    continue_conv: bool = False,
+    conversation_id: Optional[str] = None,
+    add_dir: Optional[List[str]] = None,
+    mode: Optional[str] = None,
+    effort: Optional[str] = None,
 ) -> Tuple[str, List[str], List[str]]:
     """Drive the `agy` CLI (paid OAuth login) for text, file read, file write,
     image analysis, image generation, and LOCAL CODE EXECUTION — all unified
@@ -433,9 +445,10 @@ def run_via_agy(
         )
     else:
         instr_lines.append(
-            f"If you need to create or modify any file, use the write_to_file tool "
-            f"to save it into this directory: {out_dir} (use relative or absolute "
-            f"paths under it). When finished, give your final answer as plain text."
+            f"If you need to create or modify files, output them using write fences:\n"
+            f"```write:relative/path\n<file contents>\n```\n"
+            f"The file will be saved to directory: {out_dir}. "
+            f"When finished, give your final answer as plain text."
         )
     instruction = "\n\n".join(instr_lines)
 
@@ -449,10 +462,26 @@ def run_via_agy(
     env = dict(os.environ)
     for pv in ("HTTPS_PROXY", "HTTP_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"):
         env.pop(pv, None)
+
+    # Build agy args with all optional flags
+    agy_cmd = [agy, "--dangerously-skip-permissions"]
+    if conversation_id:
+        agy_cmd.extend(["--conversation", conversation_id])
+    elif continue_conv:
+        agy_cmd.append("--continue")
+    if add_dir:
+        for d in add_dir:
+            agy_cmd.extend(["--add-dir", os.path.abspath(os.path.expanduser(d))])
+    if mode:
+        agy_cmd.extend(["--mode", mode])
+    if effort:
+        agy_cmd.extend(["--effort", effort])
+    agy_cmd.extend(["-p", instruction])
+
     try:
         with _AgyLock(timeout=max(timeout, 60)):
             proc = subprocess.run(
-                [agy, "-p", instruction],
+                agy_cmd,
                 env=env, capture_output=True, text=True, timeout=timeout,
             )
     except subprocess.TimeoutExpired:
@@ -464,10 +493,21 @@ def run_via_agy(
     except Exception as e:
         return (f"agy failed to launch: {e}", [], [])
     text = (proc.stdout or "").strip() or (proc.stderr or "").strip()
+
     after = _snapshot_all()
     changed = _changed_files(before, after)
     written = [f for f in changed if not _is_image(f)]
     images = [f for f in changed if _is_image(f)]
+
+    # Handle write fences in text output (```write:PATH\n...```)
+    # agy -p doesn't execute write_to_file; model emits fenced code blocks instead.
+    kept_text, fence_written = handle_write_requests(text, out_dir)
+    if fence_written:
+        for fw in fence_written:
+            if fw not in written:
+                written.append(fw)
+        text = kept_text
+
     return text, written, images
 
 
@@ -574,6 +614,11 @@ def agyx_run(
     verify: Optional[str] = None,
     max_fix_rounds: int = 1,
     watch_dirs: Optional[List[str]] = None,
+    continue_conv: bool = False,
+    conversation_id: Optional[str] = None,
+    add_dir: Optional[List[str]] = None,
+    mode: Optional[str] = None,
+    effort: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Run an agyx task. Returns a structured dict (the tool wraps it in JSON).
 
@@ -610,6 +655,8 @@ def agyx_run(
         text, written, images = run_via_agy(
             prompt=prompt, read=read, img=img, gen=gen,
             out_dir=out_dir, exec=exec, timeout=timeout, watch_dirs=watch_dirs,
+            continue_conv=continue_conv, conversation_id=conversation_id,
+            add_dir=add_dir, mode=mode, effort=effort,
         )
         verify_exit = None
         verify_out = ""
@@ -632,6 +679,7 @@ def agyx_run(
                 text, written, images = run_via_agy(
                     prompt=fix_prompt, read=read, img=img, gen=None,
                     out_dir=out_dir, exec=exec, timeout=timeout, watch_dirs=watch_dirs,
+                    add_dir=add_dir, mode=mode, effort=effort,
                 )
                 verify_exit, verify_out = _run_verify(verify, out_dir, timeout)
                 attempts.append({"text": text, "written": written, "images": images,
@@ -657,6 +705,8 @@ def agyx_run(
             result["written_files"] = written
         if images:
             result.setdefault("images", images)
+        if continue_conv or conversation_id:
+            result["conversation_continued"] = True
         if verify is not None:
             result["verify_exit"] = verify_exit
             if verify_out:
@@ -799,6 +849,11 @@ def _handle_agyx(args: Dict[str, Any], **kwargs) -> str:
             verify=args.get("verify"),
             max_fix_rounds=int(args.get("max_fix_rounds", 1)),
             watch_dirs=args.get("watch_dirs"),
+            continue_conv=bool(args.get("continue_conv", False)),
+            conversation_id=args.get("conversation_id"),
+            add_dir=args.get("add_dir"),
+            mode=args.get("mode"),
+            effort=args.get("effort"),
         )
         return json.dumps(res, ensure_ascii=False)
     except Exception as e:
@@ -901,6 +956,29 @@ AGYX_SCHEMA = {
             "max_iter": {
                 "type": "integer",
                 "description": "Tool-loop iteration cap (default 12).",
+            },
+            "continue_conv": {
+                "type": "boolean",
+                "description": "Continue the most recent agy conversation (-c). Use for multi-turn tasks.",
+            },
+            "conversation_id": {
+                "type": "string",
+                "description": "Resume a specific agy conversation by ID (--conversation).",
+            },
+            "add_dir": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Add workspace directories (--add-dir). agy reads these for project context.",
+            },
+            "mode": {
+                "type": "string",
+                "enum": ["accept-edits", "plan"],
+                "description": "Agent execution mode: accept-edits (auto-apply changes) or plan (plan only).",
+            },
+            "effort": {
+                "type": "string",
+                "enum": ["low", "medium", "high"],
+                "description": "Reasoning effort level for the current session.",
             },
         },
         "required": ["prompt"],

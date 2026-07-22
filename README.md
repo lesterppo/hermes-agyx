@@ -83,6 +83,11 @@ The agent calls `agyx` like any other tool. Key arguments:
 | `auto_fix` | If `verify` fails, re-prompt `agy` to fix (bounded). |
 | `max_fix_rounds` | Max auto-fix retries (default 1, hard cap 3). |
 | `watch_dirs` | Extra dirs to watch for edits outside `out_dir`. |
+| `continue_conv` | Resume the most recent `agy` conversation for multi-turn tasks. |
+| `conversation_id` | Resume a specific `agy` conversation by ID. |
+| `add_dir` | Add workspace directories for project context (--add-dir). |
+| `mode` | Agent execution mode: `accept-edits` (auto-apply) or `plan`. |
+| `effort` | Reasoning effort: `low`, `medium`, or `high`. |
 | `timeout` | Per-`agy`-call timeout seconds (default 300). |
 | `out_dir` | Where files land (default `./agyx_out`). |
 
@@ -113,16 +118,24 @@ and `error`.
 
 ```bash
 # text + read a file
-python -m agyx_plugin.agyx_cli "Explain what this script does" \
-    --read ./script.py --out-dir ./agyx_out
+agyx "Explain what this script does" --read ./script.py --out-dir ./agyx_out
+
+# multi-turn conversation
+agyx "Implement feature X" --read ./source.py --out-dir ./src
+agyx "Now add tests for that feature" --continue --out-dir ./src
+
+# with workspace context
+agyx "Find the bug" --add-dir ./project --read ./project/main.py
+
+# plan mode with high effort
+agyx "Refactor the auth module" --read ./auth.py --mode plan --effort high
 
 # image generation
-python -m agyx_plugin.agyx_cli "unused" \
-    --gen "A blue circle on white" --out-dir ./agyx_out
+agyx "unused" --gen "A blue circle on white" --out-dir ./agyx_out
 
 # self-healing loop
-python -m agyx_plugin.agyx_cli "Fix bugs in ./buggy/calc.py" \
-    --read ./buggy/calc.py --verify "cd ./buggy && python3 -m pytest -q" \
+agyx "Fix bugs in calc.py" --read ./buggy/calc.py \
+    --verify "cd ./buggy && python3 -m pytest -q" \
     --auto-fix --max-fix-rounds 3
 ```
 
@@ -144,6 +157,16 @@ real path (live `agy`) before claiming a capability works — see
 ---
 
 ## How it works
+
+File writes in `agy -p` (print/one-shot) mode use **write fences** because agy's
+`write_to_file` tool only executes in interactive mode. The model emits code like:
+
+    ```write:relative/path
+    <file contents>
+    ```
+
+The tool extracts the fence, persists the file to `out_dir`, and replaces the
+fence with `[WROTE FILE /path]` in the returned text.
 
 ```
 agyx → `agy` CLI (paid OAuth, Google internal Cloud Code API)  [PRIMARY]

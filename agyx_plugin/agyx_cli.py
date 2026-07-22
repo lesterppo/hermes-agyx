@@ -8,6 +8,7 @@ the repo root or installed as a package.
 Usage:
   python -m agyx_plugin.agyx_cli "prompt" [--read PATH] [--img PATH]
         [--gen "prompt"] [--out-dir DIR] [--verify CMD] [--auto-fix]
+        [--continue] [--conversation ID] [--add-dir DIR] [--mode MODE] [--effort LVL]
 """
 import argparse
 import json
@@ -39,7 +40,7 @@ except Exception as e:  # pragma: no cover
 
 def main():
     ap = argparse.ArgumentParser(description="Hermes-native AGY bypass (file+image+img-gen).")
-    ap.add_argument("prompt", help="The user prompt / task (use 'unused' for --gen only).")
+    ap.add_argument("prompt", nargs="?", help="The user prompt / task (use 'unused' for --gen only).")
     ap.add_argument("--img", action="append", default=[], help="Local image to analyze (repeatable).")
     ap.add_argument("--read", action="append", default=[], help="Local file to read into context (repeatable).")
     ap.add_argument("--model", default=DEFAULT_TEXT_MODEL, help="Text/multimodal model.")
@@ -54,10 +55,22 @@ def main():
     ap.add_argument("--timeout", type=int, default=300, help="Per-agy-call timeout (s).")
     ap.add_argument("--think", action="store_true", help="Enable Gemini thinking.")
     ap.add_argument("--max-iter", type=int, default=12, help="Tool-loop iteration cap.")
+    ap.add_argument("--continue", dest="continue_conv", action="store_true",
+                    help="Continue the most recent conversation.")
+    ap.add_argument("--conversation", "-c", default=None, help="Resume a conversation by ID.")
+    ap.add_argument("--add-dir", action="append", default=[], help="Add workspace directory (repeatable).")
+    ap.add_argument("--mode", default=None, choices=["accept-edits", "plan"],
+                    help="Agent execution mode.")
+    ap.add_argument("--effort", default=None, choices=["low", "medium", "high"],
+                    help="Reasoning effort level.")
     args = ap.parse_args()
+
+    if not args.prompt and not args.gen:
+        ap.error("prompt or --gen is required")
+
     try:
         res = agyx_run(
-            prompt=args.prompt,
+            prompt=args.prompt or "",
             read=args.read or None,
             img=args.img or None,
             model=args.model,
@@ -72,6 +85,11 @@ def main():
             timeout=args.timeout,
             think=args.think,
             max_iter=args.max_iter,
+            continue_conv=args.continue_conv,
+            conversation_id=args.conversation,
+            add_dir=args.add_dir or None,
+            mode=args.mode,
+            effort=args.effort,
         )
         print(json.dumps(res, ensure_ascii=False, indent=2))
         sys.exit(0 if res.get("success", True) else 1)
