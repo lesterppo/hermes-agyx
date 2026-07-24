@@ -249,13 +249,13 @@ def do_image_generation(prompt: str, img_model: str, out_dir: str) -> Tuple[Opti
 
 
 def which_agy() -> Optional[str]:
-    """Return the path to the REAL agy binary if present, else None.
-    
-    Prefers agy.real (bypasses the proxy wrapper) so tools work.
+    """Return the path to the agy binary if present, else None.
+
+    Prefers `agy` (the wrapper, which sets proxy env vars for geo-bypass).
+    Falls back to agy.real if wrapper is absent (e.g. proxy not needed).
     """
     import shutil
-    # Try agy.real first (direct binary, no proxy wrapper)
-    for name in ("agy.real", "agy"):
+    for name in ("agy", "agy.real"):
         p = shutil.which(name)
         if p:
             return p
