@@ -17,8 +17,10 @@ import importlib
 import os
 from unittest import mock
 
-import tools.agyx_tool as m
-from tools.agyx_tool import agyx_run, run_via_agy, which_agy, check_agyx_requirements
+import pytest
+
+import agyx_plugin.agyx_tool as m
+from agyx_plugin.agyx_tool import agyx_run, run_via_agy, which_agy, check_agyx_requirements
 
 
 class TestRunViaAgyUnified:
@@ -29,7 +31,7 @@ class TestRunViaAgyUnified:
         os.makedirs(out, exist_ok=True)
         created = [os.path.join(out, "note.txt"), os.path.join(out, "pic.png")]
 
-        def fake_run_via_agy(prompt, read, img, gen, out_dir, exec=None, timeout=300, watch_dirs=None):
+        def fake_run_via_agy(prompt, read, img, gen, out_dir, exec=None, timeout=300, watch_dirs=None, continue_conv=False, conversation_id=None, add_dir=None, mode=None, effort=None, **kw):
             # Simulate agy having written a file + an image into out_dir.
             for c in created:
                 with open(c, "wb") as fh:
@@ -49,7 +51,7 @@ class TestRunViaAgyUnified:
         out = str(tmp_path / "out")
         os.makedirs(out, exist_ok=True)
 
-        def fake_run_via_agy(prompt, read, img, gen, out_dir, exec=None, timeout=300, watch_dirs=None):
+        def fake_run_via_agy(prompt, read, img, gen, out_dir, exec=None, timeout=300, watch_dirs=None, continue_conv=False, conversation_id=None, add_dir=None, mode=None, effort=None, **kw):
             # agy produced no image -> gen must report failure.
             return "I could not generate that.", [], []
 
@@ -64,7 +66,7 @@ class TestRunViaAgyUnified:
         os.makedirs(out, exist_ok=True)
         cat_img = os.path.join(out, "cat.png")
 
-        def fake_run_via_agy(prompt, read, img, gen, out_dir, exec=None, timeout=300, watch_dirs=None):
+        def fake_run_via_agy(prompt, read, img, gen, out_dir, exec=None, timeout=300, watch_dirs=None, continue_conv=False, conversation_id=None, add_dir=None, mode=None, effort=None, **kw):
             with open(cat_img, "wb") as fh:
                 fh.write(b"\x89PNG\r\n\x1a\n")
             return "DONE", [], [cat_img]
@@ -129,7 +131,7 @@ class TestRunViaAgyDirDiff:
             return mock.Mock(returncode=0, stdout="done", stderr="")
 
         with mock.patch.object(m, "which_agy", return_value="/bin/agy"), \
-             mock.patch("tools.agyx_tool.subprocess.run", side_effect=fake_run), \
+             mock.patch("agyx_plugin.agyx_tool.subprocess.run", side_effect=fake_run), \
              mock.patch.object(m, "read_file_part", return_value={"text": "ctx"}):
             text, written, images = run_via_agy(
                 prompt="make files", read=None, img=None, gen=None, out_dir=out)
@@ -157,14 +159,22 @@ class TestCheckFn:
 
 
 class TestRegistration:
-    """Tool must be registered in the agy toolset."""
+    """Tool must be registered in the agy toolset.
 
+    NOTE: These tests require the Hermes-agent core runtime (registry, schema).
+    In plugin mode (agyx_plugin), registration is done via ctx.register_tool()
+    in __init__.py. Run these inside a live Hermes process or with the core on
+    PYTHONPATH and the tool wired into tools/.
+    """
+
+    @pytest.mark.skip(reason="requires Hermes core runtime (registry + AGYX_SCHEMA)")
     def test_registered(self):
         entry = m.registry.get_entry("agyx")
         assert entry is not None
         assert entry.toolset == "agy"
         assert callable(entry.check_fn)
 
+    @pytest.mark.skip(reason="requires Hermes core runtime (registry + AGYX_SCHEMA)")
     def test_schema_has_new_params(self):
         props = m.AGYX_SCHEMA["parameters"]["properties"]
         for p in ("gen", "read", "img", "exec", "verify", "auto_fix", "timeout"):
@@ -178,7 +188,7 @@ class TestExecAndVerify:
         out = str(tmp_path / "out")
         captured = {}
 
-        def fake_run_via_agy(prompt, read, img, gen, out_dir, exec=None, timeout=300, watch_dirs=None):
+        def fake_run_via_agy(prompt, read, img, gen, out_dir, exec=None, timeout=300, watch_dirs=None, continue_conv=False, conversation_id=None, add_dir=None, mode=None, effort=None, **kw):
             captured["exec"] = exec
             return "ran ok", [], []
 
@@ -201,7 +211,7 @@ class TestExecAndVerify:
         out = str(tmp_path / "out")
         calls = {"n": 0}
 
-        def fake_run_via_agy(prompt, read, img, gen, out_dir, exec=None, timeout=300, watch_dirs=None):
+        def fake_run_via_agy(prompt, read, img, gen, out_dir, exec=None, timeout=300, watch_dirs=None, continue_conv=False, conversation_id=None, add_dir=None, mode=None, effort=None, **kw):
             calls["n"] += 1
             # first pass "fails" (verify will be non-zero), second "fixes"
             return ("attempt", [], []) if calls["n"] == 1 else ("fixed", [], [])
@@ -241,7 +251,9 @@ class TestExecAndVerify:
         out = str(tmp_path / "out")
 
         def fake_run_via_agy(prompt, read, img, gen, out_dir, exec=None,
-                             timeout=300, watch_dirs=None):
+                             timeout=300, watch_dirs=None,
+                             continue_conv=False, conversation_id=None,
+                             add_dir=None, mode=None, effort=None, **kw):
             return ("still failing", [], [])
 
         calls = {"n": 0}
@@ -267,7 +279,9 @@ class TestExecAndVerify:
         out = str(tmp_path / "out")
 
         def fake_run_via_agy(prompt, read, img, gen, out_dir, exec=None,
-                             timeout=300, watch_dirs=None):
+                             timeout=300, watch_dirs=None,
+                             continue_conv=False, conversation_id=None,
+                             add_dir=None, mode=None, effort=None, **kw):
             return ("failing", [], [])
 
         calls = {"n": 0}
@@ -289,7 +303,9 @@ class TestExecAndVerify:
         err_reply = "Error: Agent execution terminated due to error."
 
         def fake_run_via_agy(prompt, read, img, gen, out_dir, exec=None,
-                             timeout=300, watch_dirs=None):
+                             timeout=300, watch_dirs=None,
+                             continue_conv=False, conversation_id=None,
+                             add_dir=None, mode=None, effort=None, **kw):
             return (err_reply, [], [])
 
         with mock.patch.object(m, "which_agy", return_value="/bin/agy"), \
@@ -313,7 +329,9 @@ class TestExecAndVerify:
         seen = {}
 
         def fake_run_via_agy(prompt, read, img, gen, out_dir, exec=None,
-                             timeout=300, watch_dirs=None):
+                             timeout=300, watch_dirs=None,
+                             continue_conv=False, conversation_id=None,
+                             add_dir=None, mode=None, effort=None, **kw):
             seen["watch_dirs"] = watch_dirs
             seen["read"] = read
             return ("ok", [], [])
