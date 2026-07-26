@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hermes-agyx"
-version = "2.4.0"
+version = "2.5.0"
 description = "Hermes-native AGY (Antigravity/Code Assist) tool: text, file read/write, image analysis, image generation, and a self-healing coding loop via the user's paid agy OAuth login."
 readme = "README.md"
 license = { text = "MIT" }

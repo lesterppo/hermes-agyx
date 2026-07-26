@@ -30,6 +30,12 @@ absent **and** a `GEMINI_API_KEY` is set.
   ```
 - (Optional fallback) a `GEMINI_API_KEY` if you don't have `agy`.
 
+> **Geo-blocked regions** (e.g. Hong Kong): agy requires a proxy bypass to pass
+> the eligibility check. See `skills/agy-bypass/references/bypass-setup.md` for
+> the full setup (mitmproxy + systemd + wrapper script). **agy v1.1.5 is
+> required** — v1.1.7 changed the `onboardUser` proto format in a way our
+> bypass cannot match.
+
 No third-party Python packages are required at runtime — the tool uses only the
 standard library (`urllib`, `subprocess`, `fcntl`).
 

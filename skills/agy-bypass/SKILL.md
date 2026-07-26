@@ -1,7 +1,7 @@
 ---
 name: agy-bypass
 description: Drive AGY (Antigravity/Code Assist) via your paid agy OAuth login — Hermes-native agyx tool for text, local file read/write, image analysis, image generation, and a self-healing coding loop.
-version: 2.4.0
+version: 2.5.0
 author: Peter
 license: MIT
 platforms: [linux]
@@ -183,3 +183,19 @@ agyx → `agy` CLI (paid OAuth, Google internal Cloud Code API) — PRIMARY PATH
   in-place-edit detection fix, test-mock signature pitfalls, and resolved gaps
   (structured error surface, out-of-tree diff scope, max_fix_rounds, shared-
   profile lock).
+- `references/bypass-setup.md` — privacy-safe proxy bypass setup for
+  geo-blocked regions (mitmproxy + systemd + wrapper + GEMINI_API_KEY).
+  Includes v1.1.7→v1.1.5 downgrade procedure and all known pitfalls.
+
+## Pitfalls — Geo-block bypass specific
+
+- **agy v1.1.7+** changed `onboardUser` to a Google LRO (Long-Running
+  Operation) proto format. The proxy bypass can only match v1.1.5's simpler
+  `{"done": true}` format. If agy fails with "proto: syntax error", downgrade
+  to v1.1.5 (188,830,144 bytes). See `references/bypass-setup.md`.
+- **VPN alone does not bypass** — Google checks **account region** (tied to
+  your Google account's registered country), not just IP. The mitmproxy
+  bypass faking server-side responses is required.
+- **Proxy asymmetry**: agyx tool calls clear proxy vars internally
+  (`env -u HTTPS_PROXY -u HTTP_PROXY`). The chat-only `agy` wrapper needs
+  the proxy ON. Do not mix the two paths.
