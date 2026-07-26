@@ -30,3 +30,4 @@ __pycache__/
 .env
 *.pem
 oauth_creds.json
+uv.lock

@@ -1,7 +1,7 @@
 name: agyx
 description: Hermes-native AGY (Antigravity/Code Assist) tool — text, local file read/write, image analysis, image generation, and a self-healing coding loop, all via the user's paid agy OAuth login.
 author: Peter
-version: 2.5.0
+version: 2.6.0
 license: MIT
 kind: general
 tags: [agy, antigravity, gemini, image, files, coding-agent]

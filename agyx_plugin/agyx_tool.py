@@ -262,6 +262,28 @@ def which_agy() -> Optional[str]:
     return None
 
 
+def _is_wrapper(agy_path: str) -> bool:
+    """Return True if agy_path is the proxy wrapper (not agy.real directly)."""
+    return os.path.basename(agy_path) == "agy" and "agy.real" not in agy_path
+
+
+def _agy_env(agy_path: str) -> dict:
+    """Build env dict for agy subprocess.
+
+    If using the wrapper (needs proxy for eligibility bypass), keep proxy vars.
+    If using agy.real directly (OAuth path), clear proxy vars.
+    """
+    env = dict(os.environ)
+    if _is_wrapper(agy_path):
+        # Wrapper needs proxy vars for eligibility bypass — keep them.
+        return env
+    # Direct agy.real — clear proxy vars for OAuth path.
+    for pv in ("HTTPS_PROXY", "HTTP_PROXY", "ALL_PROXY",
+               "http_proxy", "https_proxy", "all_proxy"):
+        env.pop(pv, None)
+    return env
+
+
 def generate_image_via_agy(prompt: str, out_dir: str,
                            timeout: int = 300) -> Tuple[Optional[List[str]], str]:
     """Image generation via the `agy` CLI using the user's own paid OAuth login.
@@ -290,10 +312,7 @@ def generate_image_via_agy(prompt: str, out_dir: str,
         f"path: {target}. Do not describe it, do not save anywhere else. When done, "
         "reply with exactly the word DONE."
     )
-    env = dict(os.environ)
-    # agy uses its own OAuth; do NOT route it through the mitmproxy.
-    for pv in ("HTTPS_PROXY", "HTTP_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"):
-        env.pop(pv, None)
+    env = _agy_env(agy)
     try:
         proc = subprocess.run(
             [agy, "--dangerously-skip-permissions", "-p", instruction],
@@ -459,9 +478,7 @@ def run_via_agy(
         return merged
 
     before = _snapshot_all()
-    env = dict(os.environ)
-    for pv in ("HTTPS_PROXY", "HTTP_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"):
-        env.pop(pv, None)
+    env = _agy_env(agy)
 
     # Build agy args with all optional flags
     agy_cmd = [agy, "--dangerously-skip-permissions"]

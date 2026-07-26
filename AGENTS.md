@@ -55,18 +55,23 @@ agyx → agy CLI (paid OAuth, Google Cloud Code API):
 
 ## Critical pitfalls for agents
 
-1. **agy v1.1.7+ proto format**: v1.1.7 changed `onboardUser` to LRO (Long-Running
-   Operation) pattern. Our proxy bypass works with v1.1.5 (188,830,144 bytes).
-   If agy fails with "proto: syntax error", downgrade to v1.1.5.
+1. **agy v1.1.7+ proto format (UNSOLVED)**: v1.1.7 changed `onboardUser` to LRO
+   (Long-Running Operation) pattern returning `google.longrunning.Operation` with
+   protobuf-encoded `OnboardUserResponse`. After testing 10+ response formats,
+   none matched the exact proto schema. **Use v1.1.5 (188,830,144 bytes) for the
+   eligibility bypass.** v1.1.7 is kept as `agy.real.v1.1.7` for future work.
 
-2. **Proxy asymmetry**: chat-only agy needs `HTTPS_PROXY=127.0.0.1:8085`. agyx
-   tool calls need proxy vars CLEARED. agyx handles this internally.
+2. **Dual-binary architecture**: The smart wrapper at `~/.local/bin/agy` execs
+   v1.1.5 through the proxy bypass. agyx's `which_agy()` prefers the wrapper.
+   New `_agy_env()` function preserves proxy vars when using the wrapper (needed
+   for eligibility), clears them when using `agy.real` directly.
 
-3. **Verify before claiming**: exercise every capability through the real auth
+3. **Proxy asymmetry (FIXED in v2.6.0)**: Previously agyx cleared proxy vars
+   for all agy calls, breaking eligibility when the wrapper was selected.
+   `_is_wrapper()` + `_agy_env()` now route correctly per binary.
+
+4. **Verify before claiming**: exercise every capability through the real auth
    path before telling the user it works. See `agyx-testing-recipe.md`.
-
-4. **Free-tier quota**: image generation on the public API is 429-gated. The agy
-   paid path has no such limit.
 
 ## Testing
 

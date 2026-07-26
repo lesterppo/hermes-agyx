@@ -1,7 +1,7 @@
 ---
 name: agy-bypass
 description: Drive AGY (Antigravity/Code Assist) via your paid agy OAuth login — Hermes-native agyx tool for text, local file read/write, image analysis, image generation, and a self-healing coding loop.
-version: 2.5.0
+version: 2.6.0
 author: Peter
 license: MIT
 platforms: [linux]
@@ -189,13 +189,18 @@ agyx → `agy` CLI (paid OAuth, Google internal Cloud Code API) — PRIMARY PATH
 
 ## Pitfalls — Geo-block bypass specific
 
-- **agy v1.1.7+** changed `onboardUser` to a Google LRO (Long-Running
-  Operation) proto format. The proxy bypass can only match v1.1.5's simpler
-  `{"done": true}` format. If agy fails with "proto: syntax error", downgrade
-  to v1.1.5 (188,830,144 bytes). See `references/bypass-setup.md`.
+- **agy v1.1.7+ (UNSOLVED)** changed `onboardUser` to a Google LRO (Long-Running
+  Operation) proto format returning `google.longrunning.Operation`. After testing
+  10+ response formats (bare JSON, Operation wrappers, proto-wire-format with
+  base64 `value` fields, multiple field-number hypotheses), none matched the
+  exact `OnboardUserResponse` proto schema. **Use v1.1.5 (188,830,144 bytes)**.
+  v1.1.7 is kept as `agy.real.v1.1.7` for future work. The smart wrapper at
+  `~/.local/bin/agy` execs v1.1.5 through the proxy bypass.
+
+- **Dual-binary architecture (v2.6.0)**: `which_agy()` prefers the `agy` wrapper
+  (v1.1.5 + proxy) for eligibility; `_is_wrapper()` + `_agy_env()` preserve
+  proxy vars when using the wrapper, clear them for direct `agy.real` calls.
+
 - **VPN alone does not bypass** — Google checks **account region** (tied to
   your Google account's registered country), not just IP. The mitmproxy
   bypass faking server-side responses is required.
-- **Proxy asymmetry**: agyx tool calls clear proxy vars internally
-  (`env -u HTTPS_PROXY -u HTTP_PROXY`). The chat-only `agy` wrapper needs
-  the proxy ON. Do not mix the two paths.
